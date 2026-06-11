@@ -1,0 +1,8 @@
+{
+  "name": "sentinel-slack-bot",
+  "private": true,
+  "description": "Pinned, lockfile-verified install of the SQLite MCP server (supply-chain hardening)",
+  "dependencies": {
+    "mcp-server-sqlite-npx": "0.8.0"
+  }
+}

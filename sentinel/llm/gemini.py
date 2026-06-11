@@ -4,7 +4,7 @@ import os
 from google import genai
 from google.genai import types
 
-from sentinel import mcp_bridge
+from sentinel import guard, mcp_bridge
 from sentinel.config import GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,8 @@ def _gemini_tools():
     return [types.Tool(function_declarations=declarations)]
 
 
-def ask_gemini(user_text):
+def ask_gemini(user_text, ctx):
+    ctx.provider = "gemini"
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     config = types.GenerateContentConfig(tools=_gemini_tools())
     contents = [
@@ -43,7 +44,7 @@ def ask_gemini(user_text):
         response_parts = []
         for fc in response.function_calls:
             logger.info("[Gemini] function_call: %s %s", fc.name, dict(fc.args))
-            output = mcp_bridge.call_tool_sync(fc.name, dict(fc.args))
+            output = guard.execute(fc.name, dict(fc.args), ctx)
             response_parts.append(
                 types.Part.from_function_response(
                     name=fc.name, response={"result": output}

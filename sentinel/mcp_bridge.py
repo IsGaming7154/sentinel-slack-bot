@@ -2,6 +2,7 @@ import asyncio
 import logging
 import threading
 from contextlib import AsyncExitStack
+from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -10,15 +11,35 @@ from sentinel.config import DB_PATH
 
 logger = logging.getLogger(__name__)
 
+# Supply-chain hardening: the SQLite MCP server is pinned in package.json and
+# verified by package-lock.json. We spawn the locally installed copy with node;
+# we never pull "latest" off the registry at runtime.
+PINNED_SERVER_VERSION = "0.8.0"
+_LOCAL_SERVER_JS = (
+    Path(__file__).resolve().parent.parent
+    / "node_modules" / "mcp-server-sqlite-npx" / "dist" / "index.js"
+)
+
+
+def _server_params(db_path):
+    if _LOCAL_SERVER_JS.exists():
+        return StdioServerParameters(
+            command="node", args=[str(_LOCAL_SERVER_JS), db_path]
+        )
+    logger.warning(
+        "Local MCP server not found (run `npm ci`). Falling back to pinned npx."
+    )
+    return StdioServerParameters(
+        command="npx",
+        args=["-y", "mcp-server-sqlite-npx@{}".format(PINNED_SERVER_VERSION), db_path],
+    )
+
 
 class AsyncMCPClient:
     """Async client that connects to the SQLite MCP server over stdio."""
 
     def __init__(self, db_path=DB_PATH):
-        self.server_params = StdioServerParameters(
-            command="npx",
-            args=["-y", "mcp-server-sqlite-npx", db_path],
-        )
+        self.server_params = _server_params(db_path)
         self.session = None
         self._exit_stack = AsyncExitStack()
 

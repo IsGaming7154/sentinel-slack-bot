@@ -1,5 +1,7 @@
 import sqlite3
 
+from sentinel.store import ensure_schema
+
 DB_PATH = "data.db"
 
 SAMPLE_TICKETS = [
@@ -32,7 +34,9 @@ def setup():
 
     count = cur.execute("SELECT COUNT(*) FROM tickets").fetchone()[0]
     conn.close()
-    print(f"Created {DB_PATH} with 'tickets' table ({count} rows).")
+
+    ensure_schema()
+    print(f"Created {DB_PATH} with 'tickets' table ({count} rows) + Sentinel control tables.")
 
 
 if __name__ == "__main__":

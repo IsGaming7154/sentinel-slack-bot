@@ -12,6 +12,7 @@ from sentinel.config import (
     POLL_INTERVAL_SECS,
     WINDOW_MINUTES,
 )
+from sentinel.guard import GuardContext
 from sentinel.llm.router import generate_reply
 from sentinel.store import parse_rows
 
@@ -49,7 +50,7 @@ def build_incident_alert(rows):
         "next steps. Keep it under 120 words.".format(len(rows), WINDOW_MINUTES, bullets)
     )
     try:
-        text = generate_reply(prompt)
+        text = generate_reply(prompt, GuardContext(user_id="system:incident-monitor"))
     except Exception:
         logger.exception("LLM alert generation failed.")
         text = ""

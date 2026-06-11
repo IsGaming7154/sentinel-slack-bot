@@ -2,7 +2,7 @@ import logging
 
 from anthropic import Anthropic
 
-from sentinel import mcp_bridge
+from sentinel import guard, mcp_bridge
 from sentinel.config import ANTHROPIC_MODEL
 
 logger = logging.getLogger(__name__)
@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 anthropic_client = Anthropic()
 
 
-def ask_claude(user_text):
+def ask_claude(user_text, ctx):
+    ctx.provider = "claude"
     tools = [
         {
             "name": t.name,
@@ -37,7 +38,7 @@ def ask_claude(user_text):
         for block in response.content:
             if block.type == "tool_use":
                 logger.info("[Claude] tool_use: %s %s", block.name, block.input)
-                output = mcp_bridge.call_tool_sync(block.name, block.input)
+                output = guard.execute(block.name, block.input, ctx)
                 tool_results.append(
                     {
                         "type": "tool_result",
