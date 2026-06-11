@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 
-from sentinel import mcp_bridge
+from sentinel import audit, guard, mcp_bridge
 from sentinel.config import (
     ALERTS_CHANNEL,
     BOTH_LLMS_DOWN,
@@ -34,6 +34,13 @@ async def poll_recent_error_tickets():
         "WHERE created_at >= datetime('now', '-{} minutes') AND ({}) "
         "ORDER BY id".format(WINDOW_MINUTES, like)
     )
+    # Even our own system queries pass the guard's read validation. We can't go
+    # through guard.execute here (it blocks on this very event loop), so we use
+    # the same validator directly.
+    ok, reason = guard.validate_read_query(query)
+    if not ok:
+        logger.error("Monitor query failed guard validation (%s); skipping.", reason)
+        return []
     result = await mcp_bridge.client.call_tool("read_query", {"query": query})
     return parse_rows(result)
 
@@ -99,6 +106,17 @@ async def incident_monitor(app):
             )
             _alerted_ids |= error_ids
             _last_alert_time = now
+            await asyncio.to_thread(
+                audit.record,
+                actor="system:incident-monitor",
+                provider="system",
+                tool="incident_alert",
+                query="{} error tickets in {}-minute window".format(
+                    len(rows), WINDOW_MINUTES
+                ),
+                decision="allowed",
+                detail="alert posted to {}".format(ALERTS_CHANNEL),
+            )
             logger.info("Incident alert posted to %s.", ALERTS_CHANNEL)
         except Exception:
             logger.exception("incident_monitor cycle failed.")

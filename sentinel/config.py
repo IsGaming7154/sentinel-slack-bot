@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
+ANTHROPIC_MODEL = "claude-sonnet-4-6"
 GEMINI_MODEL = "gemini-2.5-flash"
 
 BOTH_LLMS_DOWN = "Sorry, both Claude and Gemini are unavailable right now."

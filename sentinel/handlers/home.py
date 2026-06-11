@@ -1,6 +1,7 @@
 import logging
 
-from sentinel import audit, rbac
+from sentinel import audit, mcp_bridge, rbac
+from sentinel.llm import router
 from sentinel.store import create_ticket, get_tickets, resolve_ticket
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,19 @@ DECISION_EMOJI = {
     "denied": "🚫",
     "blocked": "⛔",
     "unauthorized": "🚨",
+}
+
+HEALTH_EMOJI = {
+    "operational": "✅",
+    "degraded": "🟡",
+    "probing": "🟡",
+    "down": "⛔",
+}
+ROUTER_STATE_LABEL = {
+    router.CLOSED: "operational",
+    router.DEGRADED: "degraded",
+    router.HALF_OPEN: "probing",
+    router.OPEN: "down",
 }
 
 # Per-user Home filter selection; purely cosmetic state, fine to lose on restart.
@@ -82,6 +96,22 @@ def _controls(status_filter, is_admin):
     return {"type": "actions", "block_id": "home_controls", "elements": elements}
 
 
+def _health_blocks(health):
+    if not health:
+        return []
+    line = "   ".join(
+        "{} *{}:* {}".format(HEALTH_EMOJI.get(state, "•"), component, state)
+        for component, state in health.items()
+    )
+    return [
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": ":heartpulse: *System health*"},
+        },
+        {"type": "context", "elements": [{"type": "mrkdwn", "text": line}]},
+    ]
+
+
 def _activity_blocks(activity):
     blocks = [
         {
@@ -116,7 +146,9 @@ def _activity_blocks(activity):
     return blocks
 
 
-def build_home_view(tickets, role=rbac.MEMBER, status_filter="all", activity=None):
+def build_home_view(
+    tickets, role=rbac.MEMBER, status_filter="all", activity=None, health=None
+):
     is_admin = role == rbac.ADMIN
     if status_filter not in FILTERS:
         status_filter = "all"
@@ -177,8 +209,18 @@ def build_home_view(tickets, role=rbac.MEMBER, status_filter="all", activity=Non
             blocks.append(_ticket_card(ticket, is_admin))
             blocks.append({"type": "divider"})
 
+    blocks.extend(_health_blocks(health))
     blocks.extend(_activity_blocks(activity or []))
     return {"type": "home", "blocks": blocks}
+
+
+def _system_health():
+    states = router.health()
+    return {
+        "Claude": ROUTER_STATE_LABEL.get(states["claude"], states["claude"]),
+        "Gemini": ROUTER_STATE_LABEL.get(states["gemini"], states["gemini"]),
+        "MCP": "operational" if mcp_bridge.client else "down",
+    }
 
 
 def _new_ticket_modal():
@@ -249,6 +291,7 @@ def register(app):
                 rbac.get_role(user_id),
                 _user_filters.get(user_id, "all"),
                 audit.recent(limit=5),
+                _system_health(),
             ),
         )
 
