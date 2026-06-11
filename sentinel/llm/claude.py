@@ -7,11 +7,10 @@ from sentinel.config import ANTHROPIC_MODEL
 
 logger = logging.getLogger(__name__)
 
-anthropic_client = Anthropic()
-
 
 def ask_claude(user_text, ctx, history=None):
     ctx.provider = "claude"
+    anthropic_client = Anthropic()
     tools = [
         {
             "name": t.name,

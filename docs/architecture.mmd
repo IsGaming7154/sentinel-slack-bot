@@ -1,0 +1,46 @@
+flowchart TB
+    subgraph SLACK["Slack (Socket Mode)"]
+        DM["DMs & @mentions"]
+        AIPANE["AI Assistant pane<br/>suggested prompts · live status"]
+        HOME["App Home dashboard<br/>KPIs · filters · health · audit feed"]
+        CARDS["Approval cards<br/>Approve / Deny (admins only)"]
+        ALERTS["#alerts channel"]
+    end
+
+    subgraph BOT["Sentinel (Python · slack_bolt)"]
+        HANDLERS["Handlers<br/>messages · assistant · home · approvals"]
+        MEMORY["Thread memory<br/>last 10 exchanges per thread"]
+        ROUTER["LLM Router<br/>circuit breakers + failover"]
+        CLAUDE["Claude Sonnet 4.6<br/>(primary)"]
+        GEMINI["Gemini 2.5 Flash<br/>(fallback)"]
+        GUARD["🛡 SENTINEL GUARD — tool firewall<br/>deny-by-default"]
+        RBAC["RBAC<br/>admin / member"]
+        AUDIT[("audit_log<br/>every decision")]
+        PENDING[("pending_actions")]
+        MONITOR["Incident monitor<br/>cascade detection (15s poll)"]
+    end
+
+    subgraph MCPL["MCP layer"]
+        BRIDGE["Async MCP bridge<br/>(daemon-thread event loop)"]
+        SERVER["SQLite MCP server<br/>pinned 0.8.0 · npm ci · stdio"]
+        DB[("data.db")]
+    end
+
+    DM --> HANDLERS
+    AIPANE --> HANDLERS
+    HOME --> HANDLERS
+    HANDLERS --> MEMORY --> ROUTER
+    ROUTER --> CLAUDE
+    ROUTER -. "circuit open / failure" .-> GEMINI
+    CLAUDE -- "every tool call" --> GUARD
+    GEMINI -- "every tool call" --> GUARD
+    GUARD -- "✅ validated single SELECT" --> BRIDGE
+    GUARD -- "⏳ write → queued" --> PENDING
+    PENDING --> CARDS
+    CARDS -- "admin approves" --> RBAC
+    RBAC -- "execute once" --> BRIDGE
+    GUARD -- "⛔ everything else" --> AUDIT
+    GUARD --> AUDIT
+    BRIDGE --> SERVER --> DB
+    MONITOR --> GUARD
+    MONITOR --> ALERTS
