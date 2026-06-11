@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 anthropic_client = Anthropic()
 
 
-def ask_claude(user_text, ctx):
+def ask_claude(user_text, ctx, history=None):
     ctx.provider = "claude"
     tools = [
         {
@@ -20,7 +20,8 @@ def ask_claude(user_text, ctx):
         }
         for t in mcp_bridge.tools
     ]
-    messages = [{"role": "user", "content": user_text}]
+    messages = [{"role": role, "content": text} for role, text in (history or [])]
+    messages.append({"role": "user", "content": user_text})
 
     while True:
         response = anthropic_client.messages.create(

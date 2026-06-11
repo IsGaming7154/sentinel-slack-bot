@@ -22,13 +22,20 @@ def _gemini_tools():
     return [types.Tool(function_declarations=declarations)]
 
 
-def ask_gemini(user_text, ctx):
+def ask_gemini(user_text, ctx, history=None):
     ctx.provider = "gemini"
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     config = types.GenerateContentConfig(tools=_gemini_tools())
     contents = [
-        types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
+        types.Content(
+            role="user" if role == "user" else "model",
+            parts=[types.Part.from_text(text=text)],
+        )
+        for role, text in (history or [])
     ]
+    contents.append(
+        types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
+    )
 
     while True:
         response = client.models.generate_content(

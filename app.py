@@ -6,7 +6,7 @@ from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from sentinel import config, mcp_bridge, monitor, store
-from sentinel.handlers import approvals, home, messages
+from sentinel.handlers import approvals, assistant, home, messages
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -16,6 +16,7 @@ app = App(
     signing_secret=os.environ["SLACK_SIGNING_SECRET"],
 )
 
+assistant.register(app)  # must run before generic message listeners
 messages.register(app)
 home.register(app)
 approvals.register(app)

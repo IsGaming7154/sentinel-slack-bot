@@ -31,11 +31,13 @@ _STRING_LITERAL = re.compile(r"'(?:[^']|'')*'")
 class GuardContext:
     """Who is asking, where to post approval cards, and which model is acting."""
 
-    def __init__(self, user_id, channel=None, client=None, provider="?"):
+    def __init__(self, user_id, channel=None, client=None, provider="?", thread_ts=None):
         self.user_id = user_id
         self.channel = channel
         self.client = client
         self.provider = provider
+        self.thread_ts = thread_ts
+        self.tool_calls = []  # (tool, decision) pairs, rendered as the reply trace
 
 
 def validate_read_query(query):
@@ -83,6 +85,7 @@ def execute(tool, arguments, ctx):
     """Run a tool call through the firewall and return text for the LLM."""
     decision, reason = evaluate(tool, arguments)
     query = _query_of(arguments)
+    ctx.tool_calls.append((tool, decision))
 
     if decision == ALLOW:
         start = time.perf_counter()
@@ -139,6 +142,7 @@ def _post_approval_card(ctx, pending_id, tool, query):
     try:
         ctx.client.chat_postMessage(
             channel=ctx.channel,
+            thread_ts=ctx.thread_ts,
             text="Sentinel: approval required for a write operation.",
             blocks=build_approval_blocks(pending_id, ctx.user_id, tool, query),
         )
