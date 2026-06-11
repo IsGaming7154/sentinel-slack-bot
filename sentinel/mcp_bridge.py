@@ -1,8 +1,12 @@
+import asyncio
 import logging
+import threading
 from contextlib import AsyncExitStack
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+from sentinel.config import DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +14,7 @@ logger = logging.getLogger(__name__)
 class AsyncMCPClient:
     """Async client that connects to the SQLite MCP server over stdio."""
 
-    def __init__(self, db_path="data.db"):
+    def __init__(self, db_path=DB_PATH):
         self.server_params = StdioServerParameters(
             command="npx",
             args=["-y", "mcp-server-sqlite-npx", db_path],
@@ -47,3 +51,37 @@ class AsyncMCPClient:
         """Tear down the session and stop the MCP server subprocess."""
         await self._exit_stack.aclose()
         self.session = None
+
+
+client = AsyncMCPClient()
+loop = None
+tools = []  # raw tool objects from session.list_tools()
+
+
+def start():
+    """Run the MCP client on its own asyncio loop in a background thread.
+
+    The loop stays alive for the process lifetime so the stdio session remains
+    open and usable from the Slack handler threads (via run_coroutine_threadsafe).
+    """
+    global loop, tools
+    loop = asyncio.new_event_loop()
+
+    def _run_loop():
+        asyncio.set_event_loop(loop)
+        loop.run_forever()
+
+    threading.Thread(target=_run_loop, name="mcp-loop", daemon=True).start()
+
+    asyncio.run_coroutine_threadsafe(client.connect(), loop).result()
+    tools = asyncio.run_coroutine_threadsafe(client.list_tools(), loop).result()
+    logger.info("MCP connected. Available tools: %s", [t.name for t in tools])
+
+
+def call_tool_sync(name, arguments):
+    """Execute an MCP tool from a sync Slack thread via the background loop."""
+    result = asyncio.run_coroutine_threadsafe(
+        client.call_tool(name, arguments), loop
+    ).result()
+    texts = [block.text for block in result.content if getattr(block, "text", None)]
+    return "\n".join(texts) if texts else str(result.content)
