@@ -108,6 +108,47 @@ def test_open_circuit_skips_provider(monkeypatch, clock):
     assert calls["claude"] == router.FAILURE_THRESHOLD + 1
 
 
+def test_rate_limited_providers_retry_and_recover(monkeypatch, clock):
+    calls = {"n": 0}
+
+    def flaky(text, ctx, history=None):
+        calls["n"] += 1
+        if calls["n"] <= 2:  # first pass: both providers rate-limited
+            raise RuntimeError("Error code: 429 - rate_limit_error")
+        return "answer"
+
+    sleeps, busy = [], []
+    _patch_providers(monkeypatch, flaky, flaky, clock)
+    reply = router.generate_reply(
+        "hi", GuardContext(user_id="U1"), on_busy=busy.append, sleep=sleeps.append
+    )
+    assert reply == "answer"
+    assert sleeps == [router.RETRY_DELAYS[0]]
+    assert busy == [router.RETRY_DELAYS[0]]
+
+
+def test_non_retriable_failure_does_not_retry(monkeypatch, clock):
+    def bad(text, ctx, history=None):
+        raise RuntimeError("Error code: 401 - invalid x-api-key")
+
+    sleeps = []
+    _patch_providers(monkeypatch, bad, bad, clock)
+    reply = router.generate_reply("hi", GuardContext(user_id="U1"), sleep=sleeps.append)
+    assert reply == BOTH_LLMS_DOWN
+    assert sleeps == []
+
+
+def test_retries_exhausted_returns_down(monkeypatch, clock):
+    def overloaded(text, ctx, history=None):
+        raise RuntimeError("Error code: 529 - overloaded_error")
+
+    sleeps = []
+    _patch_providers(monkeypatch, overloaded, overloaded, clock)
+    reply = router.generate_reply("hi", GuardContext(user_id="U1"), sleep=sleeps.append)
+    assert reply == BOTH_LLMS_DOWN
+    assert sleeps == list(router.RETRY_DELAYS)
+
+
 def test_health_reports_states(monkeypatch, clock):
     def good(text, ctx, history=None):
         return "ok"

@@ -6,11 +6,25 @@ from sentinel.handlers.replies import reply_blocks
 from sentinel.llm.router import generate_reply
 
 
+BUSY_MESSAGE = (
+    ":hourglass_flipping_sand: Both models are rate-limited right now — "
+    "let him cook, retrying in a few seconds…"
+)
+
+
 def _respond(raw_text, say, ctx, memory_key):
     user_text = re.sub(r"<@[^>]+>", "", raw_text or "").strip()
     if not user_text:
         return
-    reply = generate_reply(user_text, ctx, memory.history(memory_key))
+    notified = []
+
+    def on_busy(delay):
+        # Post the wait notice once, not once per retry round.
+        if not notified:
+            notified.append(True)
+            say(text=BUSY_MESSAGE)
+
+    reply = generate_reply(user_text, ctx, memory.history(memory_key), on_busy=on_busy)
     memory.remember(memory_key, user_text, reply)
     say(text=reply, blocks=reply_blocks(reply, ctx))
 

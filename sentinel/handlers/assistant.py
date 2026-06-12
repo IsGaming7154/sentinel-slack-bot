@@ -60,7 +60,14 @@ def respond(payload, say, set_status, client):
         client=client,
         thread_ts=thread_ts,
     )
-    reply = generate_reply(user_text, ctx, memory.history(thread_ts))
+    reply = generate_reply(
+        user_text,
+        ctx,
+        memory.history(thread_ts),
+        on_busy=lambda delay: set_status(
+            f"is letting him cook… (models busy, retrying in {delay}s)"
+        ),
+    )
     memory.remember(thread_ts, user_text, reply)
     say(text=reply, blocks=reply_blocks(reply, ctx))
 
