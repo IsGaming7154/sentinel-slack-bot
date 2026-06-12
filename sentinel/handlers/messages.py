@@ -25,12 +25,16 @@ def register(app):
     def handle_message(message, say):
         if message.get("subtype") or message.get("bot_id"):
             return
+        if memory.seen_event((message.get("channel"), message.get("ts"))):
+            return
         thread_ts = message.get("thread_ts")
         ctx = _ctx(message.get("user"), message.get("channel"), thread_ts)
         _respond(message.get("text"), say, ctx, thread_ts or message.get("channel"))
 
     @app.event("app_mention")
     def handle_mention(event, say):
+        if memory.seen_event((event.get("channel"), event.get("ts"))):
+            return
         thread_ts = event.get("thread_ts")
         ctx = _ctx(event.get("user"), event.get("channel"), thread_ts)
         _respond(event.get("text"), say, ctx, thread_ts or event.get("channel"))

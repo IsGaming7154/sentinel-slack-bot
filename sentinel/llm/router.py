@@ -83,6 +83,14 @@ def generate_reply(user_text, ctx, history=None):
                 "%s call failed (circuit %s): %s", breaker.name, breaker.state, err
             )
             continue
+        # A None/empty reply (safety block, empty candidate, truncated tool loop)
+        # is a failure too: it must trip the breaker, not reach Slack as text=None.
+        if not (reply and reply.strip()):
+            breaker.record_failure()
+            logger.warning(
+                "%s returned an empty reply (circuit %s).", breaker.name, breaker.state
+            )
+            continue
         breaker.record_success()
         return reply
     return BOTH_LLMS_DOWN

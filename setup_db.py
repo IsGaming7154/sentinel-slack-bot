@@ -1,8 +1,7 @@
 import sqlite3
 
+from sentinel.config import DB_PATH
 from sentinel.store import ensure_schema
-
-DB_PATH = "data.db"
 
 SAMPLE_TICKETS = [
     (1, "Login page returns 500 error", "open", "alice"),

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import time
 
 from sentinel import audit, guard, mcp_bridge
@@ -28,11 +29,20 @@ async def poll_recent_error_tickets():
     Runs as a native coroutine on the MCP loop, so the MCP session is only ever
     touched from its own thread.
     """
-    like = " OR ".join("lower(title) LIKE '%{}%'".format(k) for k in ERROR_KEYWORDS)
+    # The MCP read_query tool takes a single SQL string (no parameter binding),
+    # so interpolated values must be restricted to safe characters.
+    keywords = [
+        k.lower() for k in ERROR_KEYWORDS if re.fullmatch(r"[a-z0-9 _-]+", k.lower())
+    ]
+    if len(keywords) != len(ERROR_KEYWORDS):
+        logger.error("Skipping ERROR_KEYWORDS with unsafe SQL characters.")
+    if not keywords:
+        return []
+    like = " OR ".join("lower(title) LIKE '%{}%'".format(k) for k in keywords)
     query = (
         "SELECT id, title FROM tickets "
         "WHERE created_at >= datetime('now', '-{} minutes') AND ({}) "
-        "ORDER BY id".format(WINDOW_MINUTES, like)
+        "ORDER BY id".format(int(WINDOW_MINUTES), like)
     )
     # Even our own system queries pass the guard's read validation. We can't go
     # through guard.execute here (it blocks on this very event loop), so we use
@@ -45,7 +55,7 @@ async def poll_recent_error_tickets():
     return parse_rows(result)
 
 
-def build_incident_alert(rows):
+def build_incident_alert(rows, client=None):
     """Ask the LLM (Claude->Gemini) for a root-cause alert; fall back to a template."""
     titles = [r.get("title", "") for r in rows]
     bullets = "\n".join("• {}".format(t) for t in titles)
@@ -57,7 +67,12 @@ def build_incident_alert(rows):
         "next steps. Keep it under 120 words.".format(len(rows), WINDOW_MINUTES, bullets)
     )
     try:
-        text = generate_reply(prompt, GuardContext(user_id="system:incident-monitor"))
+        # Channel + client so that if the LLM ever queues a write here, the
+        # approval card lands in the alerts channel instead of being orphaned.
+        ctx = GuardContext(
+            user_id="system:incident-monitor", channel=ALERTS_CHANNEL, client=client
+        )
+        text = generate_reply(prompt, ctx)
     except Exception:
         logger.exception("LLM alert generation failed.")
         text = ""
@@ -100,7 +115,7 @@ async def incident_monitor(app):
                 continue
 
             logger.info("Cascade detected: %s error tickets in window. Alerting.", len(rows))
-            alert = await asyncio.to_thread(build_incident_alert, rows)
+            alert = await asyncio.to_thread(build_incident_alert, rows, app.client)
             await asyncio.to_thread(
                 app.client.chat_postMessage, channel=ALERTS_CHANNEL, text=alert
             )

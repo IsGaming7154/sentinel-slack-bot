@@ -1,6 +1,6 @@
 import sqlite3
 
-DB_PATH = "data.db"
+from sentinel.config import DB_PATH
 
 TEST_TICKETS = [
     ("API gateway timeout error on /checkout", "open", "dave"),

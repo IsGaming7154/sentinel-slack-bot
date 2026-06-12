@@ -82,7 +82,13 @@ def _decide(body, client, approve):
         )
         return
 
-    arguments = json.loads(pending["arguments"])
+    try:
+        arguments = json.loads(pending["arguments"])
+    except ValueError:
+        arguments = None
+    if not isinstance(arguments, dict):
+        logger.error("Approval #%s has malformed arguments; treating as empty.", pending_id)
+        arguments = {}
     query = arguments.get("query", pending["arguments"])
 
     if not rbac.is_admin(user_id):
@@ -95,6 +101,19 @@ def _decide(body, client, approve):
             channel=channel, user=user_id,
             text=":shield: Only admins can decide approval requests. "
             "Your role: {}.".format(rbac.get_role(user_id)),
+        )
+        return
+
+    if approve and user_id == pending["requested_by"]:
+        audit.record(
+            actor=user_id, provider="human", tool=pending["tool"], query=query,
+            decision="unauthorized",
+            detail="self-approval of #{} rejected".format(pending_id),
+        )
+        client.chat_postEphemeral(
+            channel=channel, user=user_id,
+            text=":shield: You requested this write, so a *different* admin must "
+            "approve request #{}. You may still deny it.".format(pending_id),
         )
         return
 

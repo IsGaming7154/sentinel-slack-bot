@@ -219,7 +219,9 @@ def _system_health():
     return {
         "Claude": ROUTER_STATE_LABEL.get(states["claude"], states["claude"]),
         "Gemini": ROUTER_STATE_LABEL.get(states["gemini"], states["gemini"]),
-        "MCP": "operational" if mcp_bridge.client else "down",
+        # client is a module-level object that always exists; session is the
+        # actual liveness signal (None until connect(), reset on close()).
+        "MCP": "operational" if mcp_bridge.client.session else "down",
     }
 
 
@@ -310,10 +312,28 @@ def register(app):
     def handle_mark_resolved(ack, body, client):
         ack()
         user_id = body["user"]["id"]
+        ticket_id = body["actions"][0]["value"]
         try:
             # Buttons are hidden from non-admins, but enforce server-side too.
             if rbac.is_admin(user_id):
-                resolve_ticket(body["actions"][0]["value"])
+                resolve_ticket(ticket_id)
+                audit.record(
+                    actor=user_id,
+                    provider="ui",
+                    tool="resolve_ticket",
+                    query="ticket #{}".format(ticket_id),
+                    decision="allowed",
+                    detail="resolved via App Home",
+                )
+            else:
+                audit.record(
+                    actor=user_id,
+                    provider="ui",
+                    tool="resolve_ticket",
+                    query="ticket #{}".format(ticket_id),
+                    decision="unauthorized",
+                    detail="non-admin tried to resolve a ticket",
+                )
             _publish(client, user_id)
         except Exception:
             logger.exception("Failed to resolve ticket for %s.", user_id)

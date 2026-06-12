@@ -50,6 +50,8 @@ def respond(payload, say, set_status, client):
     user_text = (payload.get("text") or "").strip()
     if not user_text:
         return
+    if memory.seen_event((payload.get("channel"), payload.get("ts"))):
+        return
     set_status("is consulting the ticket database…")
     thread_ts = payload.get("thread_ts")
     ctx = GuardContext(
